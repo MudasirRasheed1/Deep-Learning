@@ -36,13 +36,17 @@ The primary challenge lies in precisely capturing the complex, fractal-like boun
 #### Primary Metric: Mean Shoreline Conformity Rate (mSCR)
 The mSCR metric specifically measures boundary accuracy by computing the conformity between predicted and ground truth shorelines across multiple neighborhood sizes:
 
-$$\text{mSCR} = \frac{1}{|K|} \sum_{k \in K} \text{SCR}_k$$
+```math
+\text{mSCR} = \frac{1}{|K|} \sum_{k \in K} \text{SCR}_k
+```
 
-where $K = \{4, 8, 24, 48\}$ represents different neighborhood sizes.
+where K = {4, 8, 24, 48} represents different neighborhood sizes.
 
-For each $k$, the Shoreline Conformity Rate is computed bidirectionally:
+For each k, the Shoreline Conformity Rate is computed bidirectionally:
 
-$$\text{SCR}_k = \frac{1}{2} \left( \frac{2|S_{\text{pred}} \cap N(S_{\text{gt}}, k)|}{|S_{\text{pred}}| + |S_{\text{gt}}|} + \frac{2|S_{\text{gt}} \cap N(S_{\text{pred}}, k)|}{|S_{\text{gt}}| + |S_{\text{pred}}|} \right)$$
+```math
+\text{SCR}_k = \frac{1}{2} \left( \frac{2|S_{\text{pred}} \cap N(S_{\text{gt}}, k)|}{|S_{\text{pred}}| + |S_{\text{gt}}|} + \frac{2|S_{\text{gt}} \cap N(S_{\text{pred}}, k)|}{|S_{\text{gt}}| + |S_{\text{pred}}|} \right)
+```
 
 #### Secondary Metrics
 - **Intersection over Union (IoU)**: Measures region overlap

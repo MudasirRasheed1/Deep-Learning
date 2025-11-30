@@ -1,64 +1,114 @@
-# Model-1 — EncNet (Context Encoding Network) for CAID
-
-This folder contains an implementation and training script for EncNet applied to the CAID (Coastal Aerial Imagery Dataset) for binary semantic segmentation (land vs water).
-
-## Files
-- `code.py` — Full training script implementing:
-  - Dataset loader `CAIDDataset` (synchronized augmentations and ImageNet normalization)
-  - `EncNet` model (ResNet backbone + Context Encoding Module + segmentation head)
-  - Differentiable mSCR loss (`mSCRLoss`) and traditional losses (CrossEntropy + Dice)
-  - Corrected non-differentiable evaluation mSCR metric (per-image average across k-values -> batch mean)
-  - Training/validation loop, metric logging, and a `MetricsPlotter` for visualizing loss components and SCR per-k.
+# Model 1: Context Encoding Network (EncNet)
 
 ## Overview
-- Purpose: train an EncNet segmentation model on CAID to optimize both pixel-wise accuracy/IoU and shoreline conformity using the mSCR metric.
-- The script uses a combined loss: CE + Dice + (1 - mSCR) where mSCR is a differentiable approximation implemented in PyTorch.
-- Evaluation uses a corrected, non-differentiable mSCR computed on binarized predictions using morphological operations.
 
-## Key components
-- `Config` class: central place for dataset paths, hyperparameters (batch size, lr, epochs), augmentation probabilities, and mSCR neighborhood sizes `K_NEIGHBORS = [4,8,24,48]`.
-- `ContextEncoding` / `EncModule`: implements codebook-based context encoding and a channel attention head (like SE block).
-- `mSCRLoss`: computes SCR on soft/binarized predictions for k neighborhoods, averages across k and batch, and returns loss = 1 - mSCR.
-- `compute_mscr_batch`: corrected evaluation mSCR implementation that returns per-k SCRs and batch mSCR.
+This implementation presents a Context Encoding Network (EncNet) for semantic segmentation of coastal aerial imagery. The model performs binary classification to distinguish land from water regions in the CAID (Coastal Aerial Imagery Dataset).
 
-## Dependencies
-- Python 3.8+ (tested in Kaggle-like environment)
-- PyTorch (>=1.10 recommended)
-- torchvision
-- numpy, pandas, pillow, matplotlib, tqdm
-- scipy (for `binary_dilation`), IPython (for notebook display)
+## Architecture
 
-## Typical usage
-1. Install dependencies (example):
+### Backbone
+- **Base Architecture**: ResNet-101 pretrained on ImageNet
+- **Feature Extraction**: Four-stage hierarchical feature extraction with progressively increasing receptive fields
+- **Output Channels**: 2048-dimensional feature maps from the final layer
 
-```powershell
-# Windows PowerShell example
-pip install torch torchvision numpy pandas pillow matplotlib tqdm scipy opencv-python
-```
+### Context Encoding Module
+The model incorporates a novel Context Encoding Module that learns semantic context through:
+- **Learnable Codewords**: 32 learnable visual codewords that capture semantic patterns
+- **Soft Assignment**: Soft assignment mechanism using L2 distance-based similarity
+- **Residual Encoding**: Weighted aggregation of residuals between features and codewords
+- **Channel Attention**: Squeeze-and-Excitation (SE) block for adaptive channel recalibration
 
-2. Update dataset paths in the `Config` class (if not using Kaggle):
-   - `DATA_ROOT`, `IMAGES_DIR`, `MASKS_DIR`, `TRAIN_TXT`, `VAL_TXT`.
+### Segmentation Head
+- Convolutional layers with batch normalization
+- Dropout regularization (0.1) to prevent overfitting
+- Bilinear upsampling to restore original input resolution
 
-3. Run the training script:
+## Training Configuration
 
-```powershell
-python code.py
-```
+### Hyperparameters
+- **Batch Size**: 16
+- **Epochs**: 50
+- **Learning Rate**: 1e-4
+- **Weight Decay**: 1e-4
+- **Optimizer**: Adam
+- **Image Size**: 500 × 500 pixels
 
-## What the script produces
-- Model checkpoints: saved when validation mSCR improves (path = `cfg.BEST_MODEL_PATH`).
-- Training curves image: `training_curves.png` in `cfg.OUTPUT_DIR`.
-- Training history CSV: `training_history.csv` (losses, metrics per epoch).
+### Loss Function
+Multi-objective loss combining:
+- **Cross-Entropy Loss** (weight: 1.0): Pixel-wise classification
+- **Dice Loss** (weight: 1.0): Region-based overlap optimization
+- **Differentiable mSCR Loss** (weight: 0.5): Shoreline conformity optimization
 
-## Notes & troubleshooting
-- If you get file path errors, ensure `TRAIN_TXT`/`VAL_TXT` contain image IDs (without `.png`) and the images/masks exist at `IMAGES_DIR`/`MASKS_DIR`.
-- mSCR: two different implementations exist: differentiable (`mSCRLoss`) used for training and corrected evaluation (`compute_mscr_batch`) used for monitoring. Differences may be due to thresholding, structuring elements, and denominators — see code comments.
-- Mixed precision: enabled by default (`USE_MIXED_PRECISION = True`), but you can set it to `False` for CPU-only runs.
-- GPU/Memory: ResNet101 + EncNet is heavy; reduce `BATCH_SIZE` or use a smaller backbone in `Config` if you hit OOM.
+### Data Augmentation
+- Horizontal and vertical flipping (probability: 0.5)
+- Random rotation at 90°, 180°, 270° (probability: 0.3)
+- ImageNet normalization (mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225])
 
-## Suggestions for improvements
-- Unify shoreline extraction between the differentiable and evaluation implementations for more consistent signals (see repo comments).
-- Add a small unit-test script to run the model forward pass on a random tensor to confirm installation and shapes.
+## Evaluation Metrics
 
-## Contact / Attribution
-- Script written to experiment on CAID with EncNet and mSCR metrics. Use freely for research; cite or note modifications where appropriate.
+### Mean Shoreline Conformity Rate (mSCR)
+The primary evaluation metric assesses boundary accuracy across multiple neighborhood sizes:
+- **Neighborhood Sizes**: k ∈ {4, 8, 24, 48}
+- **Bidirectional Evaluation**: Measures conformity from predicted to ground truth and vice versa
+- **Formula**: mSCR = average of SCR_k across all k values
+
+### Additional Metrics
+- **Intersection over Union (IoU)**: Per-class and mean IoU
+- **Pixel Accuracy**: Overall classification accuracy
+- **Precision and Recall**: Class-wise performance metrics
+
+## Dataset
+
+### CAID Dataset Structure
+- **Training Set**: Images specified in train.txt
+- **Validation Set**: Images specified in val.txt
+- **Test Set**: Images specified in test.txt
+- **Format**: PNG images with corresponding segmentation masks
+- **Classes**: Binary (0: Land, 1: Water)
+
+### Data Pipeline
+- Synchronized augmentation for images and masks
+- On-the-fly preprocessing and normalization
+- Multi-threaded data loading with 2 workers
+
+## Implementation Details
+
+### Mixed Precision Training
+- Automatic Mixed Precision (AMP) enabled for faster training
+- GradScaler for gradient scaling to prevent underflow
+
+### Differentiable mSCR Loss
+- Utilizes Laplacian edge detection for shoreline extraction
+- Max pooling-based neighborhood expansion
+- Soft assignment for gradient flow during backpropagation
+
+### Computational Requirements
+- **Device**: CUDA-enabled GPU
+- **Memory**: Sufficient VRAM for batch size 16 with ResNet-101
+- **Framework**: PyTorch with torchvision
+
+## Usage
+
+### Training
+The model automatically trains for 50 epochs with early stopping based on validation mSCR. The best model checkpoint is saved to `encnet_best.pth`.
+
+### Inference
+The trained model outputs:
+- Segmentation logits of shape (B, 2, H, W)
+- Context-encoded feature vectors for semantic understanding
+
+## Key Features
+
+1. **Context-Aware Segmentation**: Learns global semantic context through learnable codewords
+2. **Multi-Scale Loss**: Combines pixel-level, region-level, and boundary-level objectives
+3. **Differentiable Evaluation**: mSCR loss enables end-to-end optimization for boundary accuracy
+4. **Robust Augmentation**: Comprehensive data augmentation strategy for improved generalization
+
+## Results
+
+The model is evaluated on:
+- Training set performance (logged per epoch)
+- Validation set performance (for model selection)
+- Test set performance (final evaluation)
+
+Performance metrics include mSCR, IoU, pixel accuracy, precision, and recall across both land and water classes.

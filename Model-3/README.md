@@ -1,68 +1,171 @@
-# Model-3 — HRNet-W48 with Hybrid Edge Channels for CAID
+# Model 3: HRNet-W48 with Hybrid Edge Channels
 
-This folder contains an implementation and training script that adapts an HRNet-W48-style network for binary semantic segmentation (land vs water) on the CAID dataset. The model supports a hybrid input: RGB channels augmented with two edge channels (Sobel magnitude and Canny edges).
+## Overview
 
-Files
-- `code.py` — End-to-end training script implementing:
-  - `CAIDHybridDataset` which creates 5-channel input (`R,G,B,Sobel,Canny`) when `cfg.USE_EDGE_CHANNELS=True`.
-  - `HRNetW48` lightweight HRNet-style network with multi-resolution branches and a final classifier.
-  - Edge-detection utilities: `compute_sobel_magnitude` and `compute_canny_edges` (OpenCV-based).
-  - Modified mSCR evaluation (`compute_scr_by_k_for_batch`) that computes per-k SCR means and an overall mSCR (per-k averaging).
-  - Differentiable mSCR loss (`mSCRLoss`) and combined loss (CE + Dice + mSCR).
-  - Training/validation loops, logging, and a `MetricsPlotter` that tracks differentiable vs evaluation mSCR and per-k SCR curves.
+This implementation presents a High-Resolution Network (HRNet-W48) enhanced with hybrid edge channel inputs for semantic segmentation of the CAID (Coastal Aerial Imagery Dataset). The model distinguishes between land and water regions while incorporating explicit edge information through Sobel and Canny edge detection channels.
 
-Highlights
-- Hybrid input: enriches RGB with explicit edge channels — can improve boundary conformity for shoreline segmentation.
-- Two mSCR variants:
-  - Differentiable: used in the loss to guide training (PyTorch operations, pooling-based expansions).
-  - Evaluation: NumPy + morphological operations that compute SCR per k and then average across k-values (per-k averaging) — reported and used for model selection.
+## Architecture
 
-Configuration
-- `Config` class at top of `code.py` controls:
-  - Data paths (`DATA_ROOT`, `IMAGES_DIR`, `MASKS_DIR`, `TRAIN_TXT`, `VAL_TXT`)
-  - Model/hyperparams (`BATCH_SIZE`, `NUM_EPOCHS`, `LEARNING_RATE`, `BACKBONE`)
-  - Hybrid input toggle: `USE_EDGE_CHANNELS` and `INPUT_CHANNELS` (set automatically)
-  - Edge detector params: `SOBEL_KSIZE`, `CANNY_THRESHOLD1`, `CANNY_THRESHOLD2`
-  - mSCR neighborhood sizes: `K_NEIGHBORS = [4,8,24,48]`
+### HRNet-W48 Backbone
+- **Architecture**: High-Resolution Network with width-48 configuration
+- **Key Feature**: Maintains high-resolution representations throughout the network
+- **Parallel Branches**: Four parallel branches processing features at different resolutions
+- **Multi-Scale Fusion**: Repeated fusion of multi-resolution representations
 
-Dependencies
-- Python 3.8+
-- PyTorch + torchvision
-- numpy, pandas, pillow, matplotlib, tqdm
-- scipy, opencv-python (cv2), IPython (optional for notebook visualization)
+### Hybrid Input Configuration
+The model accepts 5-channel inputs:
+1. **RGB Channels**: Standard color information
+2. **Sobel Magnitude Channel**: Gradient-based edge detection
+3. **Canny Edge Channel**: Binary edge map from Canny edge detector
 
-Quick start
-1. Install dependencies (example):
+### Edge Detection Parameters
+- **Sobel Kernel Size**: 3×3
+- **Canny Lower Threshold**: 50
+- **Canny Upper Threshold**: 150
 
-```powershell
-pip install torch torchvision numpy pandas pillow matplotlib tqdm scipy opencv-python
+### Segmentation Head
+- High-resolution feature aggregation
+- Convolution layers with batch normalization
+- Dropout regularization
+- Bilinear upsampling to original resolution
+
+## Training Configuration
+
+### Hyperparameters
+- **Batch Size**: 8 (reduced for HRNet-W48 memory requirements)
+- **Total Epochs**: 50
+- **Learning Rate**: 1e-4
+- **Weight Decay**: 1e-4
+- **Optimizer**: Adam
+- **Input Resolution**: 500 × 500 pixels
+
+### Loss Function
+Multi-component loss function:
+- **Cross-Entropy Loss** (weight: 1.0): Pixel-wise classification
+- **Dice Loss** (weight: 1.0): Region overlap optimization
+- **Differentiable mSCR Loss** (weight: 0.5): Shoreline boundary optimization
+
+### Data Augmentation
+- Horizontal flip (probability: 0.5)
+- Vertical flip (probability: 0.5)
+- Random rotation: 90°, 180°, 270° (probability: 0.3)
+- Edge channels recomputed after augmentation
+- ImageNet normalization for RGB channels
+
+## Evaluation Metrics
+
+### Mean Shoreline Conformity Rate (mSCR)
+- **Neighborhood Sizes**: k ∈ {4, 8, 24, 48}
+- **Per-k Averaging**: Separate computation and averaging for each neighborhood size
+- **Bidirectional Evaluation**: Measures conformity in both directions
+
+### Additional Metrics
+- **Intersection over Union (IoU)**: Per-class and mean IoU
+- **Pixel Accuracy**: Overall classification accuracy
+- **Precision and Recall**: Class-wise performance
+- **Per-k SCR**: Individual SCR scores for each neighborhood size
+
+## Dataset Specifications
+
+### CAID Dataset Structure
+- **Data Root**: `/kaggle/input/caid-dataset/CAID`
+- **Images**: `JPEGImages/` (PNG format)
+- **Masks**: `SegmentationClass/` (PNG format, grayscale)
+- **Splits**: train.txt, val.txt, test.txt
+- **Classes**: Binary (0: Land, 1: Water)
+
+### Preprocessing Pipeline
+1. Load RGB image
+2. Compute Sobel magnitude from grayscale conversion
+3. Compute Canny edges from grayscale conversion
+4. Concatenate to form 5-channel tensor
+5. Normalize RGB channels with ImageNet statistics
+6. Apply synchronized augmentations
+
+## Implementation Details
+
+### Edge Detection Implementation
+
+#### Sobel Magnitude Computation
+```
+1. Convert RGB to grayscale
+2. Compute Sobel-X and Sobel-Y gradients
+3. Calculate magnitude: sqrt(Sobel_x² + Sobel_y²)
+4. Normalize to [0, 1] range
 ```
 
-2. If not on Kaggle, update `Config` paths to point to your dataset.
-
-3. Run training:
-
-```powershell
-python code.py
+#### Canny Edge Computation
+```
+1. Convert RGB to grayscale
+2. Apply Canny edge detector with thresholds (50, 150)
+3. Normalize binary output to [0, 1] range
 ```
 
-Notes & tips
-- To disable edge channels and use standard RGB input, set `cfg.USE_EDGE_CHANNELS = False` (and restart). The model will expect 3 channels.
-- The hybrid pipeline normalizes RGB channels with ImageNet stats and maps edge channels to [-1, 1]. Make sure any external preprocessing matches this.
-- If mSCR evaluation (`mscr_eval`) is used for model selection, ensure the metrics dictionary keys match exactly (the code uses `mscr_eval` lower-case). If you integrate different scripts, be careful with key names to avoid KeyError.
-- HRNet-W48 here is a simplified, self-contained variant (not a direct copy of official repo). Parameter counts will be smaller; adjust `BATCH_SIZE` accordingly.
+### Hybrid Input Creation
+The model processes 5-channel inputs where:
+- Channels 0-2: Normalized RGB values
+- Channel 3: Normalized Sobel magnitude
+- Channel 4: Binary Canny edges
 
-Suggested experiments
-- Ablation: compare with and without edge channels to see boundary improvements.
-- Tune Canny thresholds and Sobel kernel size to better match the dataset characteristics.
-- Replace max-pool dilation in differentiable mSCR with custom structuring elements (to match evaluation implementation) for better alignment between training signal and evaluation.
+### Mixed Precision Training
+- Automatic Mixed Precision (AMP) enabled
+- GradScaler for dynamic loss scaling
+- Improved memory efficiency and training speed
 
-Outputs
-- Best model: `cfg.BEST_MODEL_PATH` (saved when validation mSCR improves).
-- Logs: saved under `cfg.LOG_DIR` with a timestamped log file.
-- Training curves and history CSV saved to `cfg.OUTPUT_DIR`.
+### Logging System
+Comprehensive logging infrastructure:
+- **Console Handler**: INFO level messages
+- **File Handler**: DEBUG level detailed logs
+- **Log Files**: Timestamped training logs in `logs/` directory
+- **Metrics Tracking**: Per-epoch loss components and evaluation metrics
 
-Troubleshooting
-- Missing files / paths: verify `TRAIN_TXT`/`VAL_TXT` contain correct image IDs and the images/masks are present.
-- OOM: HRNet can be memory heavy; reduce `BATCH_SIZE` or disable edge channels temporarily.
-- If the differentiable mSCR (`mscr_diff`) and evaluation mSCR (`mscr_eval`) diverge, consider the suggestions above (unify shoreline extraction and expansion methods).
+## Computational Requirements
+
+- **Device**: CUDA-enabled GPU with sufficient VRAM
+- **Memory**: Higher requirements due to HRNet-W48 architecture and 5-channel input
+- **Dependencies**: PyTorch, OpenCV, NumPy, PIL, matplotlib, scipy, logging
+
+## Usage
+
+### Training Workflow
+1. Load CAID dataset with 5-channel preprocessing
+2. Initialize HRNet-W48 with modified first convolution for 5 channels
+3. Train for 50 epochs with validation after each epoch
+4. Save best model based on validation mSCR
+5. Generate comprehensive training logs
+
+### Model Output
+- **Segmentation Logits**: (B, 2, H, W) classification scores
+- **Edge-Enhanced Features**: Improved boundary localization
+
+## Key Innovations
+
+1. **Hybrid Edge Channels**: Explicit edge information augments RGB input
+2. **High-Resolution Processing**: HRNet maintains spatial resolution throughout
+3. **Multi-Scale Fusion**: Repeated exchange of information across resolutions
+4. **Enhanced Boundary Detection**: Edge channels improve shoreline localization
+5. **Comprehensive Logging**: Detailed tracking of training progress and metrics
+
+## Model Advantages
+
+- **Improved Boundary Accuracy**: Edge channels provide explicit boundary cues
+- **High-Resolution Representations**: Better spatial precision for segmentation
+- **Multi-Scale Feature Fusion**: Captures both fine details and global context
+- **Robust to Scale Variations**: Parallel multi-resolution processing
+
+## Performance Analysis
+
+The model provides:
+- Per-epoch training and validation metrics
+- Per-k SCR breakdown for detailed boundary analysis
+- Best model checkpoint based on validation mSCR
+- Comprehensive test set evaluation
+- Detailed logs for training diagnostics
+
+## Ablation Considerations
+
+The hybrid edge channel approach can be evaluated by:
+- Comparing 5-channel vs. 3-channel (RGB-only) input
+- Analyzing per-k SCR improvements
+- Evaluating computational overhead of edge detection
+- Assessing boundary localization improvements

@@ -455,4 +455,4 @@ The implemented models demonstrate the feasibility of accurate land-water segmen
 
 **Course**: Deep Learning (Semester 5)
 
-[Video Link](https://plakshauniversity1-my.sharepoint.com/:v:/g/personal/sher_singh_ug23_plaksha_edu_in/IQBs3h3eFFQcSLFv8-BVK-gWAckdIeFu2hQU0gtHBx_WaQg?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&e=YlX1jE) 
+[Video Link](https://plakshauniversity1-my.sharepoint.com/:v:/g/personal/sher_singh_ug23_plaksha_edu_in/IQBs3h3eFFQcSLFv8-BVK-gWAVgMEC9fNV9gm1Ajm1IhPBI?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&e=Pwz9t8) 
